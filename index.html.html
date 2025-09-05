@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Wire Assembly Checker</title>
+  <style>
+    body { font-family: sans-serif; text-align: center; margin: 20px; }
+    video, canvas, img { max-width: 90%; margin: 10px 0; border: 1px solid #ccc; }
+    .row { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; }
+    button { margin: 5px; padding: 10px 20px; font-size: 16px; }
+  </style>
+</head>
+<body>
+  <h2>Wire Assembly Checker</h2>
+
+  <p>Step 1: Load/set your golden image (reference assembly)</p>
+  <input type="file" id="goldenUpload" accept="image/*">
+  <div><img id="goldenImg" alt="Golden assembly"></div>
+
+  <p>Step 2: Open camera and capture a test image</p>
+  <video id="camera" autoplay playsinline></video><br>
+  <button id="captureBtn">Capture Test Image</button>
+  <canvas id="testCanvas" width="640" height="480"></canvas>
+
+  <p>Step 3: Compare test vs golden</p>
+  <button id="compareBtn">Compare</button>
+
+  <div class="row">
+    <canvas id="diffCanvas" width="640" height="480"></canvas>
+  </div>
+
+  <h3 id="status"></h3>
+
+  <script>
+    const video = document.getElementById('camera');
+    const testCanvas = document.getElementById('testCanvas');
+    const testCtx = testCanvas.getContext('2d');
+    const diffCanvas = document.getElementById('diffCanvas');
+    const diffCtx = diffCanvas.getContext('2d');
+    const goldenImg = document.getElementById('goldenImg');
+    let testImgData, goldenImgData;
+
+    // Load golden image
+    document.getElementById('goldenUpload').addEventListener('change', e => {
+      const file = e.target.files[0];
+      if (!file) return;
+      goldenImg.src = URL.createObjectURL(file);
+      goldenImg.onload = () => {
+        const c = document.createElement('canvas');
+        c.width = goldenImg.width; c.height = goldenImg.height;
+        const ctx = c.getContext('2d');
+        ctx.drawImage(goldenImg, 0, 0);
+        goldenImgData = ctx.getImageData(0, 0, c.width, c.height);
+      };
+    });
+
+    // Start camera
+    navigator.mediaDevices.getUserMedia({ video: true })
+      .then(stream => video.srcObject = stream)
+      .catch(err => alert('Camera error: ' + err));
+
+    // Capture test image
+    document.getElementById('captureBtn').onclick = () => {
+      testCtx.drawImage(video, 0, 0, testCanvas.width, testCanvas.height);
+      testImgData = testCtx.getImageData(0, 0, testCanvas.width, testCanvas.height);
+    };
+
+    // Compare golden vs test
+    document.getElementById('compareBtn').onclick = () => {
+      if (!goldenImgData || !testImgData) {
+        alert('Need both golden and test images');
+        return;
+      }
+      // Resize golden to match test size
+      const gCanvas = document.createElement('canvas');
+      gCanvas.width = testCanvas.width; gCanvas.height = testCanvas.height;
+      const gCtx = gCanvas.getContext('2d');
+      gCtx.drawImage(goldenImg, 0, 0, gCanvas.width, gCanvas.height);
+      goldenImgData = gCtx.getImageData(0, 0, gCanvas.width, gCanvas.height);
+
+      const diffImg = diffCtx.createImageData(testCanvas.width, testCanvas.height);
+      let diffCount = 0;
+      for (let i = 0; i < testImgData.data.length; i += 4) {
+        const dr = Math.abs(testImgData.data[i]   - goldenImgData.data[i]);
+        const dg = Math.abs(testImgData.data[i+1] - goldenImgData.data[i+1]);
+        const db = Math.abs(testImgData.data[i+2] - goldenImgData.data[i+2]);
+        const d = (dr + dg + db) / 3;
+        if (d > 40) { // threshold
+          diffImg.data[i] = 255; diffImg.data[i+1] = 0; diffImg.data[i+2] = 0; diffImg.data[i+3] = 255;
+          diffCount++;
+        } else {
+          diffImg.data[i] = goldenImgData.data[i];
+          diffImg.data[i+1] = goldenImgData.data[i+1];
+          diffImg.data[i+2] = goldenImgData.data[i+2];
+          diffImg.data[i+3] = 255;
+        }
+      }
+      diffCtx.putImageData(diffImg, 0, 0);
+
+      const ratio = diffCount / (testImgData.data.length / 4);
+      document.getElementById('status').innerText = ratio < 0.02 ? 'PASS ✅' : 'FAIL ❌';
+    };
+  </script>
+</body>
+</html>
